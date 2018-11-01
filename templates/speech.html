@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<audio src="" autoplay="autoplay" controls id="player"></audio>
+<br>
+<input type="text" id="toy_id">
+<button onclick="conn()">开启socket连接</button>
+<br>
+<button onclick="start_reco()">开启录音</button>
+<button onclick="stop_reco()">停止录音</button>
+<br>
+<button onclick="start_msg()" id="send_msg">消息</button>
+<button onclick="stop_msg()">发送语音消息</button>
+<br>
+<button onclick="recv_msg()">播放消息</button>
+</body>
+<script type="application/javascript" src="/static/Recorder.js"></script>
+<script type="application/javascript" src="/static/jquery1-3.3.1.min.js"></script>
+<script type="application/javascript">
+    var ws = null;
+    var get_content = "http://192.168.12.111:9527/get_content/";
+    var get_chat = "http://192.168.12.111:9527/get_chat/";
+    var recv_chat = "http://192.168.12.111:9527/recv_chat";
+    var reco = null;
+    var audio_context = new AudioContext();
+    var player = null;
+    var toy_id = null;
+
+    function conn() {
+        toy_id = document.getElementById("toy_id").value;
+        ws = new WebSocket("ws://192.168.12.111:37210/toywebsocket/" + toy_id);
+
+        ws.onmessage = function (msg) {
+            var player = document.getElementById("player");
+            msg_obj = JSON.parse(msg.data);
+            console.log(msg_obj);
+            if (msg_obj.type == "music") {
+                player.src = get_content + msg_obj.content
+            } else {
+                player.src = get_chat + msg_obj.content;
+                document.getElementById("send_msg").innerText = msg_obj.form_user
+            }
+        };
+
+        ws.onclose = function (ev) {
+            conn();
+        }
+    }
+
+    navigator.getUserMedia = (navigator.getUserMedia ||
+        navigator.webkitGetUserMedia ||
+        navigator.mozGetUserMedia ||
+        navigator.msGetUserMedia);
+
+    navigator.getUserMedia({audio: true}, create_stream, function (err) {
+        console.log(err)
+    });
+
+    function create_stream(stream) {
+        var stream_input = audio_context.createMediaStreamSource(stream);
+        reco = new Recorder(stream_input);
+    }
+
+    function start_reco() {
+        reco.record();
+    }
+
+    function start_msg() {
+        reco.record();
+    }
+
+    function stop_reco() {
+        reco.stop();
+        get_audio();
+        reco.clear();
+    }
+
+    function stop_msg() {
+        setTimeout(reco.stop(), 750);
+        get_audio_msg();
+        reco.clear();
+    }
+
+    function get_audio_msg() {
+        var to_user = document.getElementById("send_msg").innerText;
+        console.log(to_user);
+        reco.exportWAV(function (wav_file) {
+            send_str = {
+                type: "chat",
+                to_user: to_user
+            };
+            ws.send(JSON.stringify(send_str));
+            ws.send(wav_file);
+        })
+    }
+
+    function get_audio() {
+        reco.exportWAV(function (wav_file) {
+            send_str = {
+                type: "music"
+            };
+            ws.send(JSON.stringify(send_str));
+            ws.send(wav_file);
+        })
+    }
+
+
+    function recv_msg() {
+        var sender = document.getElementById("send_msg").innerText;
+        player = document.getElementById("player");
+        $.post(
+            recv_chat,
+            {user_id: toy_id, sender: sender},
+            function (data) {
+                //console.log(data.shift());
+                player.src = get_chat + data.shift().content;
+                player.onended = function (ev) {
+                    if (data.length == 0) {
+                        return
+                    }
+                    player.src = get_chat + data.shift().content;
+                }
+            }, "json")
+    }
+
+    function play_chat(content) {
+
+    }
+
+</script>
+
+</html>
